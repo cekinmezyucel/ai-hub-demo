@@ -32,7 +32,7 @@ jobs:
         run: docker build -t ai-hub-demo .
 
   # "Production" in v0: run the image inside this job and smoke check it. No registry, no host.
-  production:
+  smoke:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [test, image]
     runs-on: ubuntu-latest

@@ -18,7 +18,7 @@ CI (`.github/workflows/ci.yml`) runs lint, tests and a Docker build on every PR.
 
 ## Production (v0)
 
-There is no hosted deploy. On every push to `main`, the `production` job in `ci.yml` builds the image,
+There is no hosted deploy. On every push to `main`, the `smoke` job in `ci.yml` builds the image,
 starts it inside the job, runs the smoke checks against it and stops it.
 
 Smoke checks live in `smoke/` and call the running app over HTTP (`BASE_URL`, default `http://localhost:8080`):
