@@ -12,6 +12,11 @@ Features come through PRDs.
   - `201 {"code": "<code>", "short_url": "<base URL>/<code>"}`
   - `422 {"detail": ...}` when `url` is missing, too long, not `http`/`https`, has no host,
     or has spaces or control characters. The URL is stored exactly as sent.
+- `GET /{code}` follows a short link.
+  - `302` with `Location: <original URL>`
+  - `404 {"detail": "Short link not found"}` for an unknown code.
+
+Short links live in memory: they are lost when the app restarts.
 
 ## Commands
 

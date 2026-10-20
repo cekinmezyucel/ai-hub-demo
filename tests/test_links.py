@@ -109,3 +109,70 @@ def test_create_link_logs_code_not_url(caplog):
     assert response.status_code == 201
     assert response.json()["code"] in caplog.text
     assert "secret-value" not in caplog.text
+
+
+def _create(url):
+    response = client.post("/links", json={"url": url})
+    assert response.status_code == 201
+    return response.json()["code"]
+
+
+def test_follow_link_redirects_to_url():
+    url = "https://example.com/some/long/path?x=1"
+    code = _create(url)
+
+    response = client.get(f"/{code}", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == url
+
+
+def test_follow_link_keeps_query_and_fragment():
+    url = "https://example.com/p?a=1&b=2#frag"
+    code = _create(url)
+
+    response = client.get(f"/{code}", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == url
+
+
+def test_follow_link_keeps_upper_case_scheme():
+    url = "HTTPS://example.com"
+    code = _create(url)
+
+    response = client.get(f"/{code}", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == url
+
+
+def test_same_url_twice_both_codes_redirect():
+    url = "https://example.com/same"
+    first = _create(url)
+    second = _create(url)
+
+    for code in (first, second):
+        response = client.get(f"/{code}", follow_redirects=False)
+        assert response.status_code == 302
+        assert response.headers["location"] == url
+
+
+def test_unknown_code_returns_404():
+    response = client.get("/doesnotexist", follow_redirects=False)
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Short link not found"}
+    assert "location" not in response.headers
+
+
+def test_unknown_code_logs_code(caplog):
+    client.get("/doesnotexist", follow_redirects=False)
+
+    assert "doesnotexist" in caplog.text
+
+
+def test_docs_still_served():
+    response = client.get("/docs")
+
+    assert response.status_code == 200

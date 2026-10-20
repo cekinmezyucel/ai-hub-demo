@@ -3,7 +3,8 @@ import secrets
 import string
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, field_validator
 
 logging.basicConfig(level=logging.INFO)
@@ -58,3 +59,12 @@ def create_link(link: LinkIn, request: Request) -> LinkOut:
     links[code] = link.url
     logger.info("short link created code=%s", code)
     return LinkOut(code=code, short_url=f"{str(request.base_url).rstrip('/')}/{code}")
+
+
+@app.get("/{code}")
+def follow_link(code: str) -> RedirectResponse:
+    url = links.get(code)
+    if url is None:
+        logger.warning("short link not found code=%s", code)
+        raise HTTPException(status_code=404, detail="Short link not found")
+    return RedirectResponse(url, status_code=302)

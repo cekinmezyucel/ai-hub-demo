@@ -41,3 +41,33 @@ def test_ac_4_url_length_limit(client):
     assert ok.status_code == 201
     assert too_long.status_code == 422
     assert "detail" in too_long.json()
+
+
+def test_ac_2_redirect_to_url(client):
+    code = client.post("/links", json={"url": URL}).json()["code"]
+
+    response = client.get(f"/{code}")
+
+    assert response.status_code == 302
+    assert response.headers["location"] == URL
+
+
+def test_ac_5_same_url_twice(client):
+    first = client.post("/links", json={"url": URL})
+    second = client.post("/links", json={"url": URL})
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["code"] != second.json()["code"]
+    for code in (first.json()["code"], second.json()["code"]):
+        response = client.get(f"/{code}")
+        assert response.status_code == 302
+        assert response.headers["location"] == URL
+
+
+def test_ac_6_unknown_code_404(client):
+    response = client.get("/doesnotexist")
+
+    assert response.status_code == 404
+    assert "detail" in response.json()
+    assert "location" not in response.headers
