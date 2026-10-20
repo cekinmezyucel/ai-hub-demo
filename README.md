@@ -3,7 +3,15 @@
 A small URL shortener. It is the demo app for [ai-hub](https://github.com/cekinmezyucel/ai-hub):
 the agent builds its features from PRD Issues, one step at a time.
 
-Today it only has `GET /health`. Features come through PRDs.
+Features come through PRDs.
+
+## API
+
+- `GET /health` → `200 {"status": "ok"}`
+- `POST /links` with `{"url": "<absolute http(s) URL, 1–2,048 characters>"}` creates a short link.
+  - `201 {"code": "<code>", "short_url": "<base URL>/<code>"}`
+  - `422 {"detail": ...}` when `url` is missing, too long, not `http`/`https`, has no host,
+    or has spaces or control characters. The URL is stored exactly as sent.
 
 ## Commands
 
