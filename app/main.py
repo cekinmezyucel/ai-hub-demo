@@ -4,6 +4,8 @@ import string
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -46,6 +48,14 @@ def new_code() -> str:
         code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
         if code not in links:
             return code
+
+
+@app.exception_handler(RequestValidationError)
+async def log_invalid_request(request: Request, exc: RequestValidationError):
+    # Log only where and why: the rejected input can hold personal data or tokens.
+    errors = [(error["loc"], error["type"]) for error in exc.errors()]
+    logger.warning("invalid request path=%s errors=%s", request.url.path, errors)
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.get("/health")

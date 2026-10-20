@@ -176,3 +176,22 @@ def test_docs_still_served():
     response = client.get("/docs")
 
     assert response.status_code == 200
+
+
+def test_invalid_request_logged_without_url(caplog):
+    response = client.post("/links", json={"url": " https://example.com/?token=secret-value"})
+
+    assert response.status_code == 422
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "/links" in warnings[0].getMessage()
+    assert "secret-value" not in caplog.text
+
+
+def test_invalid_request_body_unchanged():
+    response = client.post("/links", json={"url": "ftp://example.com"})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list)
+    assert detail[0]["loc"] == ["body", "url"]
