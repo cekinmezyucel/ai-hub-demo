@@ -75,6 +75,7 @@ def create_link(link: LinkIn, request: Request) -> LinkOut:
 def follow_link(code: str) -> RedirectResponse:
     url = links.get(code)
     if url is None:
-        logger.warning("short link not found code=%s", code)
+        # %r escapes newlines, so a crafted code cannot forge extra log lines.
+        logger.warning("short link not found code=%r", code)
         raise HTTPException(status_code=404, detail="Short link not found")
     return RedirectResponse(url, status_code=302)

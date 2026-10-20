@@ -172,6 +172,15 @@ def test_unknown_code_logs_code(caplog):
     assert "doesnotexist" in caplog.text
 
 
+def test_unknown_code_log_cannot_forge_lines(caplog):
+    forged = "/abc%0AINFO:app.main:short%20link%20created%20code=FAKE1234"
+    client.get(forged, follow_redirects=False)
+
+    messages = [r.getMessage() for r in caplog.records if r.name == "app.main"]
+    assert len(messages) == 1
+    assert "\n" not in messages[0]
+
+
 def test_docs_still_served():
     response = client.get("/docs")
 
