@@ -13,7 +13,10 @@ Features come through PRDs.
   - `422 {"detail": ...}` when `url` is missing, too long, not `http`/`https`, has no host,
     or has spaces or control characters. The URL is stored exactly as sent.
 - `GET /{code}` follows a short link.
-  - `302` with `Location: <original URL>`
+  - `302` with `Location: <stored URL, percent-encoded>`. Each character is kept except ASCII
+    letters, digits, `-._~` and `:/%#?=@[]!$&'()*+,;`; all others are UTF-8 percent-encoded.
+    Examples: `|` → `%7C`, `{` → `%7B`, `é` → `%C3%A9`. `%` is kept, so an encoded URL is not
+    encoded twice.
   - `404 {"detail": "Short link not found"}` for an unknown code.
 
 Short links live in memory: they are lost when the app restarts.
