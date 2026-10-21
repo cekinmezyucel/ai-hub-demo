@@ -158,6 +158,59 @@ def test_same_url_twice_both_codes_redirect():
         assert response.headers["location"] == url
 
 
+def test_follow_link_encodes_unsafe_chars():
+    code = _create('https://example.com/a|b?q={x}&r="y"')
+
+    response = client.get(f"/{code}", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://example.com/a%7Cb?q=%7Bx%7D&r=%22y%22"
+
+
+def test_follow_link_encodes_non_ascii():
+    code = _create("https://example.com/café")
+
+    response = client.get(f"/{code}", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://example.com/caf%C3%A9"
+
+
+def test_follow_link_does_not_encode_twice():
+    url = "https://example.com/p%20q/r?s=1&t=a:b@c#frag"
+    code = _create(url)
+
+    response = client.get(f"/{code}", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == url
+
+
+def test_follow_link_keeps_stray_percent():
+    url = "https://example.com/100%"
+    code = _create(url)
+
+    response = client.get(f"/{code}", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        'https://example.com/a|b?q={x}&r="y"',
+        "https://example.com/café",
+        "https://example.com/p%20q/r?s=1&t=a:b@c#frag",
+        "https://example.com/100%",
+    ],
+)
+def test_create_link_accepts_encodable_urls(url):
+    response = client.post("/links", json={"url": url})
+
+    assert response.status_code == 201
+
+
 def test_unknown_code_returns_404():
     response = client.get("/doesnotexist", follow_redirects=False)
 
