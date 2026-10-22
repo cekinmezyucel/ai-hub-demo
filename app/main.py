@@ -27,7 +27,8 @@ class LinkIn(BaseModel):
     @field_validator("url")
     @classmethod
     def check_url(cls, url: str) -> str:
-        # Checked as sent, never trimmed or normalised: the redirect returns it exactly.
+        # Checked and stored as sent, never trimmed or normalised.
+        # The redirect percent-encodes unsafe characters in Location.
         if any(c.isspace() or not c.isprintable() for c in url):
             raise ValueError("url must not contain spaces or control characters")
         parts = urlsplit(url)

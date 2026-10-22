@@ -14,7 +14,7 @@ Feature: 1-shorten-url-redirect · Spec: ./spec.md · Risk: medium — two new p
 ## Approach
 - All code stays in `app/main.py`, next to `/health` (P-2, P-4). Links live in a module-level `dict[str, str]` (code → URL): the spec puts restarts out of scope.
 - Request model `LinkIn(BaseModel)` with `url: str = Field(min_length=1, max_length=2048)` and a `field_validator` that uses `urllib.parse.urlsplit`: scheme (lower-cased only for the check) is `http` or `https`, `hostname` is set, and the URL has no whitespace or control characters (covers A-4 leading/trailing spaces; P-5). A `ValueError` in the validator gives FastAPI's normal `422`.
-- **Rejected:** pydantic `AnyHttpUrl`. It normalises the URL (adds `/`, lower-cases the host), so `Location` would not be "exactly" what was sent (AC-2, A-4).
+- **Rejected:** pydantic `AnyHttpUrl`. It normalises the URL (adds `/`, lower-cases the host), so `Location` would not be "exactly" what was sent (AC-2, A-4). (`Location` is percent-encoded; see feature 3-redirect-location-exact-url.)
 - Code: 7 characters from `string.ascii_letters + string.digits` with `secrets.choice` (A-2); pick again while the code is taken. Reserved paths (`health`, `links`, `docs`, `redoc`, `openapi.json`) can never match, because none is 7 alphanumeric characters.
 - Redirect with Starlette `RedirectResponse(url, status_code=302)` (A-1). `short_url` = `str(request.base_url).rstrip("/") + "/" + code` (A-3).
 - `GET /{code}` is declared after `/health` and `/links`; FastAPI adds `/docs`, `/redoc`, `/openapi.json` at app creation, so they still match first.
@@ -47,9 +47,9 @@ Feature: 1-shorten-url-redirect · Spec: ./spec.md · Risk: medium — two new p
   - `smoke/test_1_shorten_url_redirect.py` (change).
   - `README.md` (change) — document `GET /{code}` (`302`, `404`) and that links are lost on restart.
 - Test first: `tests/test_links.py` (all `GET` calls use `follow_redirects=False`; Starlette `TestClient` follows redirects by default):
-  - `test_follow_link_redirects_to_url` — create `https://example.com/some/long/path?x=1`; `GET /<code>` → `302`, `Location` is exactly that URL.
+  - `test_follow_link_redirects_to_url` — create `https://example.com/some/long/path?x=1`; `GET /<code>` → `302`, `Location` is exactly that URL (`Location` is percent-encoded; see feature 3-redirect-location-exact-url).
   - `test_follow_link_keeps_query_and_fragment` — `https://example.com/p?a=1&b=2#frag` comes back unchanged.
-  - `test_follow_link_keeps_upper_case_scheme` — `Location` is `HTTPS://example.com` as sent.
+  - `test_follow_link_keeps_upper_case_scheme` — `Location` is `HTTPS://example.com` as sent (`Location` is percent-encoded; see feature 3-redirect-location-exact-url).
   - `test_same_url_twice_both_codes_redirect` — both codes → `302` to the same URL.
   - `test_unknown_code_returns_404` — `GET /doesnotexist` → `404`, body `{"detail": "Short link not found"}`, no `location` header.
   - `test_unknown_code_logs_code` (`caplog`) — log text holds `doesnotexist`.
