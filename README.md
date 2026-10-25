@@ -42,7 +42,7 @@ git config core.hooksPath .githooks                         # once: gitleaks blo
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, tests and a Docker build on every PR.
-`secret-scan.yml` runs the shared gitleaks scan from ai-hub on every PR and push to `main` ([SECURITY.md](SECURITY.md)).
+`gitleaks.yml` scans for secrets on every PR and push to `main` ([SECURITY.md](SECURITY.md)).
 
 ## Production (v0)
 
