@@ -1,6 +1,7 @@
 import logging
 import secrets
 import string
+import threading
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
@@ -19,6 +20,10 @@ CODE_LENGTH = 7
 
 # Short links live only while the app runs (spec: links that survive a restart are out of scope).
 links: dict[str, str] = {}
+# Clicks per code: a click is a GET /{code} that returns 302. No visitor data is kept.
+clicks: dict[str, int] = {}
+# Sync endpoints run in a thread pool and `+= 1` is not atomic.
+clicks_lock = threading.Lock()
 
 
 class LinkIn(BaseModel):
@@ -42,6 +47,11 @@ class LinkIn(BaseModel):
 class LinkOut(BaseModel):
     code: str
     short_url: str
+
+
+class ClicksOut(BaseModel):
+    code: str
+    clicks: int
 
 
 def new_code() -> str:
@@ -68,6 +78,7 @@ def health() -> dict[str, str]:
 def create_link(link: LinkIn, request: Request) -> LinkOut:
     code = new_code()
     links[code] = link.url
+    clicks[code] = 0
     logger.info("short link created code=%s", code)
     return LinkOut(code=code, short_url=f"{str(request.base_url).rstrip('/')}/{code}")
 
@@ -79,4 +90,16 @@ def follow_link(code: str) -> RedirectResponse:
         # %r escapes newlines, so a crafted code cannot forge extra log lines.
         logger.warning("short link not found code=%r", code)
         raise HTTPException(status_code=404, detail="Short link not found")
+    with clicks_lock:
+        clicks[code] += 1
     return RedirectResponse(url, status_code=302)
+
+
+@app.get("/links/{code}/clicks")
+def read_clicks(code: str) -> ClicksOut:
+    count = clicks.get(code)
+    if count is None:
+        # %r escapes newlines, so a crafted code cannot forge extra log lines.
+        logger.warning("short link clicks not found code=%r", code)
+        raise HTTPException(status_code=404, detail="Short link not found")
+    return ClicksOut(code=code, clicks=count)

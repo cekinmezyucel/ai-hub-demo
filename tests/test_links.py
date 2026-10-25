@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi.testclient import TestClient
@@ -229,6 +230,140 @@ def test_unknown_code_log_cannot_forge_lines(caplog):
     forged = "/abc%0AINFO:app.main:short%20link%20created%20code=FAKE1234"
     client.get(forged, follow_redirects=False)
 
+    messages = [r.getMessage() for r in caplog.records if r.name == "app.main"]
+    assert len(messages) == 1
+    assert "\n" not in messages[0]
+
+
+def _clicks(code):
+    response = client.get(f"/links/{code}/clicks")
+    assert response.status_code == 200
+    return response.json()
+
+
+def _follow(code, times=1):
+    for _ in range(times):
+        response = client.get(f"/{code}", follow_redirects=False)
+        assert response.status_code == 302
+
+
+def test_new_link_has_zero_clicks():
+    code = _create("https://example.com/")
+
+    response = client.get(f"/links/{code}/clicks")
+
+    assert response.status_code == 200
+    assert response.json() == {"code": code, "clicks": 0}
+
+
+def test_each_follow_adds_one_click():
+    code = _create("https://example.com/")
+
+    _follow(code, 3)
+
+    assert _clicks(code)["clicks"] == 3
+
+
+def test_clicks_counted_per_link():
+    first = _create("https://example.com/a")
+    second = _create("https://example.com/b")
+
+    _follow(first, 2)
+
+    assert _clicks(first)["clicks"] == 2
+    assert _clicks(second)["clicks"] == 0
+
+
+def test_clicks_of_unknown_code_returns_404():
+    response = client.get("/links/doesnotexist/clicks")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Short link not found"}
+
+
+def test_clicks_of_unknown_code_logs_warning(caplog):
+    client.get("/links/doesnotexist/clicks")
+
+    warnings = [r for r in caplog.records if r.name == "app.main" and r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "doesnotexist" in warnings[0].getMessage()
+
+
+def test_reading_clicks_does_not_add_clicks():
+    code = _create("https://example.com/")
+    _follow(code, 2)
+
+    for _ in range(3):
+        assert _clicks(code)["clicks"] == 2
+
+
+def test_unknown_code_follow_does_not_change_count():
+    code = _create("https://example.com/")
+    _follow(code)
+
+    response = client.get("/doesnotexist", follow_redirects=False)
+
+    assert response.status_code == 404
+    assert _clicks(code)["clicks"] == 1
+
+
+def test_clicks_store_and_log_no_visitor_data(caplog):
+    caplog.set_level("INFO")
+    code = _create("https://example.com/")
+
+    response = client.get(
+        f"/{code}",
+        headers={"User-Agent": "ac7-agent", "X-Forwarded-For": "203.0.113.7"},
+        follow_redirects=False,
+    )
+    body = _clicks(code)
+
+    assert response.status_code == 302
+    assert set(body) == {"code", "clicks"}
+    assert "ac7-agent" not in caplog.text
+    assert "203.0.113.7" not in caplog.text
+
+
+def test_head_does_not_count():
+    code = _create("https://example.com/")
+
+    response = client.head(f"/{code}", follow_redirects=False)
+
+    assert response.status_code != 302
+    assert _clicks(code)["clicks"] == 0
+
+
+def test_post_and_follow_responses_keep_their_shape():
+    url = "https://example.com/shape"
+    code = _create(url)
+    _clicks(code)
+
+    created = client.post("/links", json={"url": url})
+    followed = client.get(f"/{code}", follow_redirects=False)
+
+    assert created.status_code == 201
+    assert set(created.json()) == {"code", "short_url"}
+    assert followed.status_code == 302
+    assert followed.headers["location"] == url
+
+
+def test_parallel_follows_lose_no_click():
+    code = _create("https://example.com/")
+
+    def follow(_):
+        return client.get(f"/{code}", follow_redirects=False).status_code
+
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        statuses = list(pool.map(follow, range(50)))
+
+    assert statuses == [302] * 50
+    assert _clicks(code)["clicks"] == 50
+
+
+def test_clicks_log_cannot_forge_lines(caplog):
+    response = client.get("/links/abc%0AINFO:app.main:x/clicks")
+
+    assert response.status_code == 404
     messages = [r.getMessage() for r in caplog.records if r.name == "app.main"]
     assert len(messages) == 1
     assert "\n" not in messages[0]
