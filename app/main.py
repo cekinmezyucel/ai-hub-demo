@@ -18,6 +18,8 @@ app = FastAPI(title="ai-hub-demo")
 
 CODE_ALPHABET = string.ascii_letters + string.digits
 CODE_LENGTH = 7
+# One-segment paths the app serves itself; a chosen code must not hide them, in any case.
+RESERVED_CODES = {"links", "health", "docs", "redoc"}
 
 # Short links live only while the app runs (spec: links that survive a restart are out of scope).
 links: dict[str, str] = {}
@@ -39,6 +41,8 @@ class LinkIn(BaseModel):
         # Explicit ASCII class, not \w: only these characters ever reach a path or log line.
         if code is not None and not re.fullmatch(r"[A-Za-z0-9_-]+", code):
             raise ValueError("code may only contain ASCII letters, digits, '-' and '_'")
+        if code is not None and code.lower() in RESERVED_CODES:
+            raise ValueError("code is a reserved name")
         return code
 
     @field_validator("url")

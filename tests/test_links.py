@@ -538,3 +538,19 @@ def test_chosen_code_starts_with_zero_clicks():
     code = _create_with_code("https://example.com/", _code())
 
     assert _clicks(code) == {"code": code, "clicks": 0}
+
+
+@pytest.mark.parametrize(
+    "code", ["links", "health", "docs", "redoc", "Health", "DOCS", "Links", "REDOC"]
+)
+def test_chosen_code_rejects_reserved_names(code):
+    response = client.post("/links", json={"url": "https://example.com/", "code": code})
+
+    assert response.status_code == 422
+    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/docs").status_code == 200
+
+
+@pytest.mark.parametrize("prefix", ["docs", "my-health"])
+def test_chosen_code_may_contain_reserved_name(prefix):
+    _create_with_code("https://example.com/", _code(prefix))

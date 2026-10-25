@@ -92,6 +92,14 @@ def test_ac_8_bad_characters_422(client):
         assert "short_url" not in response.json()
 
 
+def test_ac_9_reserved_names_422(client):
+    for code in ("links", "health", "docs", "redoc", "Health", "DOCS"):
+        assert _post(client, code).status_code == 422, code
+
+    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/docs").status_code == 200
+
+
 def test_ac_10_empty_null_non_string(client):
     assert _post(client, "").status_code == 422
     assert _post(client, 123).status_code == 422
