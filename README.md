@@ -35,12 +35,14 @@ Short links and their click counts live in memory: they are lost when the app re
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+git config core.hooksPath .githooks                         # once: gitleaks blocks commits with secrets
 .venv/bin/ruff check . && .venv/bin/ruff format --check .   # lint
 .venv/bin/pytest                                            # test
 .venv/bin/uvicorn app.main:app --reload                     # run on :8000
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, tests and a Docker build on every PR.
+`secret-scan.yml` runs the shared gitleaks scan from ai-hub on every PR and push to `main` ([SECURITY.md](SECURITY.md)).
 
 ## Production (v0)
 
