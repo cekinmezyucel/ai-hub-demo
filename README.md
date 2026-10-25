@@ -18,8 +18,12 @@ Features come through PRDs.
     Examples: `|` → `%7C`, `{` → `%7B`, `é` → `%C3%A9`. `%` is kept, so an encoded URL is not
     encoded twice.
   - `404 {"detail": "Short link not found"}` for an unknown code.
+- `GET /links/{code}/clicks` reads how often a short link was followed. No login needed.
+  - `200 {"code": "<code>", "clicks": <n>}`. A click is a `GET /{code}` that returns `302`.
+    `HEAD` requests do not count. No visitor data is stored.
+  - `404 {"detail": "Short link not found"}` for an unknown code.
 
-Short links live in memory: they are lost when the app restarts.
+Short links and their click counts live in memory: they are lost when the app restarts.
 
 ## Commands
 
