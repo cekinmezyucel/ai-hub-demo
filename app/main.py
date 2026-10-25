@@ -1,4 +1,5 @@
 import logging
+import re
 import secrets
 import string
 import threading
@@ -24,10 +25,21 @@ links: dict[str, str] = {}
 clicks: dict[str, int] = {}
 # Sync endpoints run in a thread pool and `+= 1` is not atomic.
 clicks_lock = threading.Lock()
+# Check and store a code in one step, so two creates of one code cannot both win.
+links_lock = threading.Lock()
 
 
 class LinkIn(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
+    code: str | None = Field(default=None, min_length=3, max_length=32)
+
+    @field_validator("code")
+    @classmethod
+    def check_code(cls, code: str | None) -> str | None:
+        # Explicit ASCII class, not \w: only these characters ever reach a path or log line.
+        if code is not None and not re.fullmatch(r"[A-Za-z0-9_-]+", code):
+            raise ValueError("code may only contain ASCII letters, digits, '-' and '_'")
+        return code
 
     @field_validator("url")
     @classmethod
@@ -76,9 +88,13 @@ def health() -> dict[str, str]:
 
 @app.post("/links", status_code=201)
 def create_link(link: LinkIn, request: Request) -> LinkOut:
-    code = new_code()
-    links[code] = link.url
-    clicks[code] = 0
+    with links_lock:
+        code = link.code or new_code()
+        if code in links:
+            logger.warning("short code taken code=%s", code)
+            raise HTTPException(status_code=409, detail="Short code already taken")
+        links[code] = link.url
+        clicks[code] = 0
     logger.info("short link created code=%s", code)
     return LinkOut(code=code, short_url=f"{str(request.base_url).rstrip('/')}/{code}")
 
