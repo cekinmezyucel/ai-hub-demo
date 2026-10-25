@@ -554,3 +554,55 @@ def test_chosen_code_rejects_reserved_names(code):
 @pytest.mark.parametrize("prefix", ["docs", "my-health"])
 def test_chosen_code_may_contain_reserved_name(prefix):
     _create_with_code("https://example.com/", _code(prefix))
+
+
+def test_chosen_code_other_case_is_404():
+    code = _create_with_code("https://example.com/", _code())
+
+    followed = client.get(f"/{code.lower()}", follow_redirects=False)
+    read = client.get(f"/links/{code.lower()}/clicks")
+
+    assert followed.status_code == 404
+    assert followed.json() == {"detail": "Short link not found"}
+    assert read.status_code == 404
+    assert read.json() == {"detail": "Short link not found"}
+    assert _clicks(code)["clicks"] == 0
+
+
+def test_random_code_skips_chosen_code(monkeypatch):
+    chosen = _create_with_code("https://example.com/a", "Ab1" + secrets.token_hex(2))
+    # The first random code drawn is the chosen one; the draws after it are real.
+    chars = iter(chosen)
+    real_choice = secrets.choice
+    monkeypatch.setattr(
+        "app.main.secrets.choice", lambda alphabet: next(chars, None) or real_choice(alphabet)
+    )
+
+    code = _create("https://example.com/b")
+
+    assert code != chosen
+    assert next(chars, None) is None
+
+
+def test_random_code_works_only_in_exact_case():
+    response = client.post("/links", json={"url": "https://example.com/"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert set(body) == {"code", "short_url"}
+    code = body["code"]
+    assert re.fullmatch(r"[A-Za-z0-9]{7}", code)
+    if code.swapcase() != code:
+        assert client.get(f"/{code.swapcase()}", follow_redirects=False).status_code == 404
+
+
+def test_parallel_creates_of_one_code_give_one_201():
+    code = _code()
+
+    def create(_):
+        return client.post("/links", json={"url": "https://example.com/", "code": code})
+
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        statuses = sorted(response.status_code for response in pool.map(create, range(20)))
+
+    assert statuses == [201] + [409] * 19

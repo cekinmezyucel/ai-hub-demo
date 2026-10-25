@@ -47,6 +47,19 @@ def test_ac_2_chosen_code_redirects_and_counts(client):
     assert _clicks(client, code)["clicks"] == 1
 
 
+def test_ac_3_other_case_404(client):
+    code = _create_with_code(client, _code())
+
+    followed = client.get(f"/{code.lower()}")
+    read = client.get(f"/links/{code.lower()}/clicks")
+
+    assert followed.status_code == 404
+    assert followed.json() == {"detail": "Short link not found"}
+    assert read.status_code == 404
+    assert read.json() == {"detail": "Short link not found"}
+    assert _clicks(client, code)["clicks"] == 0
+
+
 def test_ac_4_taken_code_409(client):
     code = _create_with_code(client, _code())
 
@@ -114,3 +127,29 @@ def test_ac_11_chosen_code_zero_clicks(client):
     code = _create_with_code(client, _code())
 
     assert _clicks(client, code) == {"code": code, "clicks": 0}
+
+
+def test_ac_12_random_codes_differ(client):
+    seen = {_create_with_code(client, _code())}
+
+    for _ in range(5):
+        response = client.post("/links", json={"url": URL})
+        assert response.status_code == 201
+        code = response.json()["code"]
+        assert code not in seen
+        seen.add(code)
+
+
+def test_ac_13_only_url_same_as_before(client):
+    response = client.post("/links", json={"url": URL})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert set(body) == {"code", "short_url"}
+    code = body["code"]
+    assert len(code) == 7
+    assert code.isascii()
+    assert code.isalnum()
+    assert client.get(f"/{code}").status_code == 302
+    if code.swapcase() != code:
+        assert client.get(f"/{code.swapcase()}").status_code == 404
