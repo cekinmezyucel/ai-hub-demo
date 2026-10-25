@@ -234,6 +234,68 @@ def test_unknown_code_log_cannot_forge_lines(caplog):
     assert "\n" not in messages[0]
 
 
+def _clicks(code):
+    response = client.get(f"/links/{code}/clicks")
+    assert response.status_code == 200
+    return response.json()
+
+
+def _follow(code, times=1):
+    for _ in range(times):
+        response = client.get(f"/{code}", follow_redirects=False)
+        assert response.status_code == 302
+
+
+def test_new_link_has_zero_clicks():
+    code = _create("https://example.com/")
+
+    response = client.get(f"/links/{code}/clicks")
+
+    assert response.status_code == 200
+    assert response.json() == {"code": code, "clicks": 0}
+
+
+def test_each_follow_adds_one_click():
+    code = _create("https://example.com/")
+
+    _follow(code, 3)
+
+    assert _clicks(code)["clicks"] == 3
+
+
+def test_clicks_counted_per_link():
+    first = _create("https://example.com/a")
+    second = _create("https://example.com/b")
+
+    _follow(first, 2)
+
+    assert _clicks(first)["clicks"] == 2
+    assert _clicks(second)["clicks"] == 0
+
+
+def test_clicks_of_unknown_code_returns_404():
+    response = client.get("/links/doesnotexist/clicks")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Short link not found"}
+
+
+def test_clicks_of_unknown_code_logs_warning(caplog):
+    client.get("/links/doesnotexist/clicks")
+
+    warnings = [r for r in caplog.records if r.name == "app.main" and r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "doesnotexist" in warnings[0].getMessage()
+
+
+def test_reading_clicks_does_not_add_clicks():
+    code = _create("https://example.com/")
+    _follow(code, 2)
+
+    for _ in range(3):
+        assert _clicks(code)["clicks"] == 2
+
+
 def test_docs_still_served():
     response = client.get("/docs")
 
