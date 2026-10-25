@@ -32,6 +32,26 @@ def _readme_clicks_block():
     return "\n".join(block)
 
 
+def _readme_create_link_block():
+    lines = (ROOT / "README.md").read_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("- `POST /links`"))
+    block = [lines[start]]
+    for line in lines[start + 1 :]:
+        if not line.startswith("  "):
+            break
+        block.append(line)
+    return "\n".join(block)
+
+
+def test_readme_documents_chosen_code():
+    block = _readme_create_link_block()
+
+    for word in ('"code"', "3", "32", "case-sensitive", "409", "Short code already taken", "422"):
+        assert word in block, word
+    for name in ("links", "health", "docs", "redoc"):
+        assert f"`{name}`" in block, name
+
+
 def test_readme_documents_clicks_endpoint():
     block = _readme_clicks_block()
 

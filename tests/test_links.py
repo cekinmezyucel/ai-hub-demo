@@ -1,10 +1,11 @@
 import re
+import secrets
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, links
 
 client = TestClient(app)
 
@@ -392,3 +393,216 @@ def test_invalid_request_body_unchanged():
     detail = response.json()["detail"]
     assert isinstance(detail, list)
     assert detail[0]["loc"] == ["body", "url"]
+
+
+def _code(prefix="My-Docs"):
+    # Tests share one in-memory app: a random suffix keeps chosen codes free.
+    return f"{prefix}-{secrets.token_hex(4)}"
+
+
+def _create_with_code(url, code):
+    response = client.post("/links", json={"url": url, "code": code})
+    assert response.status_code == 201
+    assert response.json()["code"] == code
+    return code
+
+
+def test_create_link_with_chosen_code():
+    response = client.post("/links", json={"url": "https://example.com/docs", "code": "My-Docs"})
+
+    assert response.status_code == 201
+    assert response.json() == {"code": "My-Docs", "short_url": "http://testserver/My-Docs"}
+
+
+def test_chosen_code_redirects_and_counts():
+    url = "https://example.com/docs"
+    code = _create_with_code(url, _code())
+
+    response = client.get(f"/{code}", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == url
+    assert _clicks(code)["clicks"] == 1
+
+
+def test_taken_code_returns_409():
+    code = _create_with_code("https://example.com/a", _code())
+
+    response = client.post("/links", json={"url": "https://example.com/b", "code": code})
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Short code already taken"}
+    assert _clicks(code)["clicks"] == 0
+    followed = client.get(f"/{code}", follow_redirects=False)
+    assert followed.status_code == 302
+    assert followed.headers["location"] == "https://example.com/a"
+
+
+def test_taken_code_logs_code_not_url(caplog):
+    code = _create_with_code("https://example.com/a", _code())
+    caplog.set_level("INFO")
+
+    response = client.post(
+        "/links", json={"url": "https://example.com/?token=secret-value", "code": code}
+    )
+
+    assert response.status_code == 409
+    warnings = [r for r in caplog.records if r.name == "app.main" and r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert code in warnings[0].getMessage()
+    assert "secret-value" not in caplog.text
+
+
+def test_code_differing_in_case_is_a_new_link():
+    code = _code()
+    _create_with_code("https://example.com/a", code)
+
+    response = client.post("/links", json={"url": "https://example.com/b", "code": code.lower()})
+
+    assert response.status_code == 201
+    assert response.json()["code"] == code.lower()
+    for each, url in ((code, "https://example.com/a"), (code.lower(), "https://example.com/b")):
+        followed = client.get(f"/{each}", follow_redirects=False)
+        assert followed.status_code == 302
+        assert followed.headers["location"] == url
+
+
+def test_random_code_cannot_be_chosen():
+    code = _create("https://example.com/a")
+
+    response = client.post("/links", json={"url": "https://example.com/b", "code": code})
+
+    assert response.status_code == 409
+    followed = client.get(f"/{code}", follow_redirects=False)
+    assert followed.status_code == 302
+    assert followed.headers["location"] == "https://example.com/a"
+
+
+@pytest.mark.parametrize("length, status", [(2, 422), (3, 201), (32, 201), (33, 422)])
+def test_chosen_code_length_limits(length, status):
+    code = secrets.token_hex(17)[:length]
+
+    response = client.post("/links", json={"url": "https://example.com/", "code": code})
+
+    assert response.status_code == status
+
+
+@pytest.mark.parametrize(
+    "code", ["ab c12", "abc.12", "abc/12", "abcé12", " abc12", "abc12 ", "abc12\n"]
+)
+def test_chosen_code_rejects_bad_characters(code):
+    before = len(links)
+
+    response = client.post("/links", json={"url": "https://example.com/", "code": code})
+
+    assert response.status_code == 422
+    body = response.json()
+    assert "code" not in body
+    assert "short_url" not in body
+    assert len(links) == before
+
+
+@pytest.mark.parametrize("code", ["", 123])
+def test_chosen_code_empty_or_not_string(code):
+    response = client.post("/links", json={"url": "https://example.com/", "code": code})
+
+    assert response.status_code == 422
+
+
+def test_chosen_code_null_gives_random_code():
+    response = client.post("/links", json={"url": "https://example.com/", "code": None})
+
+    assert response.status_code == 201
+    assert re.fullmatch(r"[A-Za-z0-9]{7}", response.json()["code"])
+
+
+def test_bad_url_with_valid_code_keeps_code_free():
+    code = _code()
+
+    bad = client.post("/links", json={"url": "ftp://example.com", "code": code})
+
+    assert bad.status_code == 422
+    _create_with_code("https://example.com/", code)
+
+
+def test_bad_url_and_bad_code_give_one_422():
+    response = client.post("/links", json={"url": "ftp://example.com", "code": "a b"})
+
+    assert response.status_code == 422
+    locs = [error["loc"] for error in response.json()["detail"]]
+    assert ["body", "url"] in locs
+    assert ["body", "code"] in locs
+
+
+def test_chosen_code_starts_with_zero_clicks():
+    code = _create_with_code("https://example.com/", _code())
+
+    assert _clicks(code) == {"code": code, "clicks": 0}
+
+
+@pytest.mark.parametrize(
+    "code", ["links", "health", "docs", "redoc", "Health", "DOCS", "Links", "REDOC"]
+)
+def test_chosen_code_rejects_reserved_names(code):
+    response = client.post("/links", json={"url": "https://example.com/", "code": code})
+
+    assert response.status_code == 422
+    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/docs").status_code == 200
+
+
+@pytest.mark.parametrize("prefix", ["docs", "my-health"])
+def test_chosen_code_may_contain_reserved_name(prefix):
+    _create_with_code("https://example.com/", _code(prefix))
+
+
+def test_chosen_code_other_case_is_404():
+    code = _create_with_code("https://example.com/", _code())
+
+    followed = client.get(f"/{code.lower()}", follow_redirects=False)
+    read = client.get(f"/links/{code.lower()}/clicks")
+
+    assert followed.status_code == 404
+    assert followed.json() == {"detail": "Short link not found"}
+    assert read.status_code == 404
+    assert read.json() == {"detail": "Short link not found"}
+    assert _clicks(code)["clicks"] == 0
+
+
+def test_random_code_skips_chosen_code(monkeypatch):
+    chosen = _create_with_code("https://example.com/a", "Ab1" + secrets.token_hex(2))
+    # The first random code drawn is the chosen one; the draws after it are real.
+    chars = iter(chosen)
+    real_choice = secrets.choice
+    monkeypatch.setattr(
+        "app.main.secrets.choice", lambda alphabet: next(chars, None) or real_choice(alphabet)
+    )
+
+    code = _create("https://example.com/b")
+
+    assert code != chosen
+    assert next(chars, None) is None
+
+
+def test_random_code_works_only_in_exact_case():
+    response = client.post("/links", json={"url": "https://example.com/"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert set(body) == {"code", "short_url"}
+    code = body["code"]
+    assert re.fullmatch(r"[A-Za-z0-9]{7}", code)
+    if code.swapcase() != code:
+        assert client.get(f"/{code.swapcase()}", follow_redirects=False).status_code == 404
+
+
+def test_parallel_creates_of_one_code_give_one_201():
+    code = _code()
+
+    def create(_):
+        return client.post("/links", json={"url": "https://example.com/", "code": code})
+
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        statuses = sorted(response.status_code for response in pool.map(create, range(20)))
+
+    assert statuses == [201] + [409] * 19
