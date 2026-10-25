@@ -8,10 +8,16 @@ Features come through PRDs.
 ## API
 
 - `GET /health` → `200 {"status": "ok"}`
-- `POST /links` with `{"url": "<absolute http(s) URL, 1–2,048 characters>"}` creates a short link.
+- `POST /links` with `{"url": "<absolute http(s) URL, 1–2,048 characters>", "code": "<optional>"}`
+  creates a short link.
+  - `code` is optional. Without it (or with `null`) the app picks a random 7-character code.
+    A chosen code has 3–32 characters from `A–Z a–z 0–9 - _` and is not `links`, `health`,
+    `docs` or `redoc` in any case. All codes are case-sensitive and saved as sent.
   - `201 {"code": "<code>", "short_url": "<base URL>/<code>"}`
+  - `409 {"detail": "Short code already taken"}` when the chosen code exists in the same case.
   - `422 {"detail": ...}` when `url` is missing, too long, not `http`/`https`, has no host,
-    or has spaces or control characters. The URL is stored exactly as sent.
+    or has spaces or control characters, or when `code` breaks the rules or is a reserved name.
+    The URL is stored exactly as sent.
 - `GET /{code}` follows a short link.
   - `302` with `Location: <stored URL, percent-encoded>`. ASCII letters, digits, `-._~` and
     `:/%#?=@[]!$&'()*+,;` are kept; all other characters are UTF-8 percent-encoded.
